@@ -1,60 +1,83 @@
-import {Component, OnInit} from '@angular/core';
-import {Course, sortCoursesBySeqNo} from '../model/course';
-import {interval, noop, Observable, of, throwError, timer} from 'rxjs';
-import {catchError, delay, delayWhen, filter, finalize, map, retryWhen, shareReplay, tap} from 'rxjs/operators';
-import {HttpClient} from '@angular/common/http';
-import {MatDialog, MatDialogConfig} from '@angular/material/dialog';
-import {CourseDialogComponent} from '../course-dialog/course-dialog.component';
-
+import { HttpClient } from "@angular/common/http";
+import { Component, Input, OnInit } from "@angular/core";
+import { MatDialog, MatDialogConfig } from "@angular/material/dialog";
+import { Observable, interval, noop, of, throwError, timer } from "rxjs";
+import {
+  catchError,
+  delay,
+  delayWhen,
+  filter,
+  finalize,
+  map,
+  retryWhen,
+  shareReplay,
+  tap,
+} from "rxjs/operators";
+import { CourseDialogComponent } from "../course-dialog/course-dialog.component";
+import { LoaderService } from "../loading/loading.service";
+import { MessagesService } from "../messages/messages.service";
+import { Course, sortCoursesBySeqNo } from "../model/course";
+import { HomeService } from "../services/home.service";
 
 @Component({
-  selector: 'home',
-  templateUrl: './home.component.html',
-  styleUrls: ['./home.component.css']
+  selector: "home",
+  templateUrl: "./home.component.html",
+  styleUrls: ["./home.component.css"],
 })
 export class HomeComponent implements OnInit {
-
   beginnerCourses: Course[];
 
   advancedCourses: Course[];
 
+  constructor(
+    private http: HttpClient,
+    private homeService: HomeService,
+    private loadingService: LoaderService,
+    private messageService: MessagesService
+  ) {}
 
-  constructor(private http: HttpClient, private dialog: MatDialog) {
-
-  }
+  courses$: Observable<Course[]>;
+  beginnerCourses$: Observable<Course[]>;
+  advancedCourses$: Observable<Course[]>;
 
   ngOnInit() {
-
-    this.http.get('/api/courses')
-      .subscribe(
-        res => {
-
-          const courses: Course[] = res["payload"].sort(sortCoursesBySeqNo);
-
-          this.beginnerCourses = courses.filter(course => course.category == "BEGINNER");
-
-          this.advancedCourses = courses.filter(course => course.category == "ADVANCED");
-
-        });
-
+    this.reloadCourses();
   }
 
-  editCourse(course: Course) {
+  reloadCourses() {
+    this.loadingService.loadingOn();
 
-    const dialogConfig = new MatDialogConfig();
+    this.courses$ = this.homeService.loadAllCourses().pipe(
+      map((c) => c.sort(sortCoursesBySeqNo)),
+      catchError((err) => {
+        const message = "Error Loading Courses";
+        this.messageService.showError(message);
+        console.log(err);
+        return throwError(err); //must return an observable
+      })
+    );
+    // pass observable to which we want to add loading  indicator capabilites
+    const loadCourses$ = this.loadingService.showLoaderUntilCompleted(
+      this.courses$
+    );
+    // loadCourses$ ^ has loading indicator capacity
+    // pass on the observable with loading capacity to others
+    this.beginnerCourses$ = loadCourses$.pipe(
+      map((c) =>
+        c
+          .sort(sortCoursesBySeqNo)
+          .filter((course) => course.category === "BEGINNER")
+      )
+    );
 
-    dialogConfig.disableClose = true;
-    dialogConfig.autoFocus = true;
-    dialogConfig.width = "400px";
+    this.advancedCourses$ = loadCourses$.pipe(
+      map((c) =>
+        c
+          .sort(sortCoursesBySeqNo)
+          .filter((course) => course.category === "ADVANCED")
+      )
+    );
 
-    dialogConfig.data = course;
-
-    const dialogRef = this.dialog.open(CourseDialogComponent, dialogConfig);
-
+    this.loadingService.loadingOff();
   }
-
 }
-
-
-
-
